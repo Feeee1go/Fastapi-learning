@@ -1,0 +1,32 @@
+services:
+  # 你的 FastAPI 服务
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+    # 👇【修改点 1】挂载目录 (Bind Mount)
+    # 格式是：  本地路径 : 容器内路径
+    volumes:
+      - ./:/usr/src/app
+
+    # 👇【修改点 2】覆盖启动命令，开启 --reload
+    # 原本 Dockerfile 里没有 --reload，这里我们要加上，这样代码变了服务才会自动重启
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # 👇 数据库部分不用动
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password123
+      - POSTGRES_DB=fastapi
+
+volumes:
+  postgres_data:
