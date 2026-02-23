@@ -77,6 +77,7 @@ import { ref, onMounted, computed, reactive } from 'vue'
 import api from '@/utils/request'
 import type { Post } from '@/types'
 import { useUserStore } from '@/stores/user'
+import { useAuth } from '@/composables/useAuth'
 
 type PostOut = { Post: Post; votes: number }
 
@@ -98,6 +99,7 @@ const expanded = reactive<{ [key: number]: boolean }>({})
 const toast = ref<string | null>(null)
 
 const userStore = useUserStore()
+const { logout } = useAuth()
 const currentUserId = computed(() => userStore.user?.id)
 
 function postKey(p: PostOut) {
