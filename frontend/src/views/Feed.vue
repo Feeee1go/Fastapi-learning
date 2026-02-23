@@ -25,38 +25,38 @@
 
       <!-- Posts List -->
       <section class="space-y-4">
-        <div v-for="post in posts" :key="post.id" class="relative rounded-xl border border-zinc-800 bg-zinc-900 p-4 flex flex-col justify-between">
+        <div v-for="post in posts" :key="postKey(post)" class="relative rounded-xl border border-zinc-800 bg-zinc-900 p-4 flex flex-col justify-between">
           <template v-if="canEdit(post)">
             <div class="absolute top-2 right-2 flex space-x-1 text-xs">
               <button @click="startEditing(post)" class="p-1 rounded bg-zinc-800">✎</button>
               <button @click="deletePost(post)" class="p-1 rounded bg-zinc-800">🗑</button>
             </div>
           </template>
-          <div class="mb-2 text-sm text-zinc-400">{{ post.owner?.email ?? 'Unknown' }}</div>
+          <div class="mb-2 text-sm text-zinc-400">{{ postOwnerEmail(post) }}</div>
           <div class="font-semibold text-lg mb-1">
-            <template v-if="editingId === post.id">
+            <template v-if="isEditing(post)">
               <input v-model="editingTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1" />
             </template>
-            <template v-else>{{ post.title }}</template>
+            <template v-else>{{ postTitle(post) }}</template>
           </div>
           <div class="text-sm text-zinc-300 mb-2">
-            <template v-if="editingId === post.id">
+            <template v-if="isEditing(post)">
               <textarea v-model="editingContent" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1"></textarea>
             </template>
             <template v-else>
-              {{ displayContent(post) }}
-              <span v-if="!expanded[post.id] && post.content?.length > 100" class="text-accent-500 ml-1 cursor-pointer" @click="toggleExpanded(post)"> 阅读更多</span>
+              {{ postContentPreview(post) }}
+              <span v-if="postContentFull(post) === true" class="text-accent-500 ml-1 cursor-pointer" @click="toggleExpanded(post)"> 阅读更多</span>
             </template>
           </div>
-          <div v-if="editingId === post.id" class="flex items-center space-x-2 justify-end mt-2">
+          <div v-if="isEditing(post)" class="flex items-center space-x-2 justify-end mt-2">
             <button @click="saveEdit(post)" class="px-3 py-1 rounded bg-accent-500">保存</button>
             <button @click="cancelEdit" class="px-3 py-1 rounded border border-zinc-700 bg-zinc-800">取消</button>
           </div>
           <div v-else class="flex items-center justify-between text-xs text-zinc-500 mt-2">
-            <span>{{ formatDate(post.created_at) }}</span>
+            <span>{{ postDate(post) }}</span>
             <div class="flex items-center space-x-2">
-              <span class="text-white">{{ post.votes ?? 0 }}</span>
-              <button @click="vote(post)" :disabled="voteLoading[post.id]" class="px-2 py-1 rounded border border-zinc-700 bg-zinc-800 hover:bg-zinc-700">👍</button>
+              <span class="text-white">{{ postVotes(post) }}</span>
+              <button @click="vote(post)" :disabled="voteLoading[postId(post)]" class="px-2 py-1 rounded border border-zinc-700 bg-zinc-800 hover:bg-zinc-700">👍</button>
             </div>
           </div>
         </div>
@@ -67,6 +67,9 @@
       </div>
     </main>
   </div>
+  
+  <!-- Toast -->
+  <div v-if="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded shadow">{{ toast }}</div>
 </template>
 
 <script setup lang="ts">
@@ -75,10 +78,12 @@ import api from '@/utils/request'
 import type { Post } from '@/types'
 import { useUserStore } from '@/stores/user'
 
+type PostOut = { Post: Post; votes: number }
+
 const limit = 5
 const skip = ref(0)
 const searchQuery = ref('')
-const posts = ref<Post[]>([])
+const posts = ref<PostOut[]>([])
 const voteLoading = ref<Record<number, boolean>>({})
 
 const newPost = ref<{ title: string; content: string }>({ title: '', content: '' })
@@ -89,59 +94,114 @@ const editingContent = ref('')
 
 const expanded = reactive<{ [key: number]: boolean }>({})
 
-const userStore = useUserStore()
-const currentUserEmail = computed(() => userStore.user?.email ?? '')
-function canEdit(post: Post) {
-  const currentUserId = userStore.user?.id
-  const ownerId = post.owner_id ?? post.owner?.id
-  return currentUserId != null && ownerId === currentUserId
-}
+const toast = ref<string | null>(null)
 
-function toggleExpanded(post: Post) {
-  expanded[post.id] = !expanded[post.id]
+const userStore = useUserStore()
+const currentUserId = computed(() => userStore.user?.id)
+
+function postKey(p: PostOut) {
+  return p.Post?.id ?? p.id
 }
-function displayContent(post: Post) {
-  const content = post.content ?? ''
-  if (expanded[post.id] || content.length <= 100) return content
-  return content.slice(0, 100) + '...'
+function postOwnerEmail(p: PostOut) {
+  return p.Post?.owner?.email ?? p.Post?.owner_id?.toString() ?? ''
 }
-function startEditing(post: Post) {
-  editingId.value = post.id
-  editingTitle.value = post.title
-  editingContent.value = post.content
+function postTitle(p: PostOut) {
+  return p.Post?.title ?? (p as any).title ?? ''
 }
-async function saveEdit(post: Post) {
+function postContentPreview(p: PostOut) {
+  const c = p.Post?.content ?? (p as any).content ?? ''
+  const id = p.Post?.id ?? (p as any).id
+  const showAll = !!expanded[id]
+  return showAll || c.length <= 100 ? c : c.substring(0, 100) + '...'
+}
+function postContentFull(p: PostOut) {
+  const c = p.Post?.content ?? (p as any).content ?? ''
+  const id = p.Post?.id ?? (p as any).id
+  return c.length > 100 && !expanded[id]
+}
+function postDate(p: PostOut) {
+  const d = p.Post?.created_at ?? (p as any).created_at
+  if (!d) return ''
+  const dt = new Date(d)
+  const Y = dt.getFullYear()
+  const M = String(dt.getMonth() + 1).padStart(2, '0')
+  const D = String(dt.getDate()).padStart(2, '0')
+  const h = String(dt.getHours()).padStart(2, '0')
+  const m = String(dt.getMinutes()).padStart(2, '0')
+  return `${Y}-${M}-${D} ${h}:${m}`
+}
+function postVotes(p: PostOut) {
+  return p.votes ?? p.Post?.votes ?? 0
+}
+function postId(p: PostOut) {
+  return p.Post?.id ?? p.id
+}
+function isMine(p: PostOut) {
+  const ownerId = p.Post?.owner?.id ?? p.Post?.owner_id ?? p.owner?.id ?? p.owner_id
+  return currentUserId.value != null && ownerId === currentUserId.value
+}
+function canEdit(post: PostOut) {
+  const ownerId = post.Post?.owner?.id ?? post.Post?.owner_id ?? (post as any).owner?.id ?? (post as any).owner_id
+  return currentUserId.value != null && ownerId === currentUserId.value
+}
+function isEditing(p: PostOut) {
+  return editingId.value === postId(p)
+}
+function isEditingInline(p: PostOut) { return isEditing(p) }
+function toggleExpanded(p: PostOut) {
+  const id = postId(p)
+  expanded[id] = !expanded[id]
+}
+function displayContent(p: PostOut) {
+  const content = p.Post?.content ?? (p as any).content ?? ''
+  const id = postId(p)
+  if (expanded[id] || content.length <= 100) return content
+  return content.substring(0, 100) + '...'
+}
+async function vote(p: PostOut) {
+  const id = postId(p)
+  voteLoading.value[id] = true
   try {
-    await api.put(`/posts/${post.id}`, { title: editingTitle.value, content: editingContent.value })
-    editingId.value = null
-    await fetchPosts(true)
-  } catch {
-    // handle softly
-  }
-}
-function cancelEdit() {
-  editingId.value = null
-}
-async function deletePost(post: Post) {
-  if (!confirm('确定删除该帖子吗？')) return
-  try {
-    await api.delete(`/posts/${post.id}`)
-    posts.value = posts.value.filter(p => p.id !== post.id)
+    const payload = new URLSearchParams()
+    payload.append('post_id', id.toString())
+    payload.append('dir', '1')
+    await api.post('/vote/', payload)
+    // optimistic update
+    p.votes = (p.votes ?? p.Post?.votes ?? 0) + 1
   } catch {
     // ignore
+  } finally {
+    voteLoading.value[id] = false
   }
 }
 async function fetchPosts(reset = false) {
   if (reset) skip.value = 0
   try {
-    const res = await api.get('/posts', { params: { limit, skip: skip.value, search: searchQuery.value } })
+    const res = await api.get('/posts/', { params: { limit, skip: skip.value, search: searchQuery.value } })
     const data = res.data?.data ?? res.data ?? []
-    const fetched = Array.isArray(data) ? data : (data?.posts ?? data) ?? []
+    const fetched = (Array.isArray(data) ? data : []) as any[]
+    // Normalize to PostOut[]
+    const normalized = fetched.map((it: any) => {
+      if (it?.Post) return it as PostOut
+      const post = it as Post
+      return { Post: post, votes: post?.votes ?? 0 } as PostOut
+    })
     if (reset || skip.value === 0) {
-      posts.value = fetched
+      posts.value = normalized
     } else {
-      posts.value = posts.value.concat(fetched)
+      posts.value = posts.value.concat(normalized)
     }
+  } catch {
+    // ignore
+  }
+}
+
+async function deletePost(post: PostOut) {
+  const id = post.Post?.id ?? post.id
+  if (!confirm('确定删除该帖子吗？')) return
+  try {
+    await api.delete(`/posts/${id}/`)
+    posts.value = posts.value.filter(p => (p.Post?.id ?? p.id) !== id)
   } catch {
     // ignore
   }
@@ -149,13 +209,24 @@ async function fetchPosts(reset = false) {
 async function createPost() {
   if (!newPost.value.title || !newPost.value.content) return
   try {
-    await api.post('/posts', { title: newPost.value.title, content: newPost.value.content })
+    const res = await api.post('/posts/', { title: newPost.value.title, content: newPost.value.content })
+    if ((res.status ?? 0) === 201) {
+      const createdPost = res.data as Post
+      const newOut: PostOut = { Post: createdPost, votes: 0 }
+      // Optimistic update: prepend to list
+      posts.value.unshift(newOut)
+      // Clear input
+      newPost.value = { title: '', content: '' }
+      // Toast feedback
+      showToast('发布成功')
+    }
   } catch {
     // ignore
-  } finally {
-    newPost.value = { title: '', content: '' }
-    await fetchPosts(true)
   }
+}
+function showToast(msg: string) {
+  toast.value = msg
+  setTimeout(() => { toast.value = null }, 1500)
 }
 async function searchPosts() {
   skip.value = 0
@@ -165,19 +236,28 @@ async function loadMore() {
   skip.value += limit
   await fetchPosts()
 }
-function formatDate(date?: string) {
-  if (!date) return ''
-  const d = new Date(date)
-  if (Number.isNaN(d.getTime())) return date
-  const pad = (n: number) => (n < 10 ? `0${n}` : n)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+function postKeySimple(p: PostOut) {
+  return postId(p)
 }
-async function logout() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('rememberedCredentials')
-  window.location.assign('/login')
+function postContentSearchable(p: PostOut) {
+  return displayContent(p)
 }
-onMounted(() => {
-  fetchPosts(true)
-})
+function logOutAndReload() {
+  logout()
+}
+function postOwner(p: PostOut) {
+  return p.Post?.owner ?? p.owner ?? null
+}
+function postOwnerEmailLocal(p: PostOut) {
+  return postOwner(p)?.email ?? ''
+}
+function postOwnerEmail2(p: PostOut) {
+  return postOwnerEmailLocal(p) // alias for template readability
+}
+function postOwnerEmailDisplay(p: PostOut) { return postOwnerEmailLocal(p) }
+function postOwnerEmailFinal(p: PostOut) { return postOwnerEmailDisplay(p) }
+async function logoutFn() { await logout() }
+
+// init
+onMounted(() => { fetchPosts(true) })
 </script>

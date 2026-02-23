@@ -4,8 +4,9 @@ import Register from '@/views/Register.vue'
 import Feed from '@/views/Feed.vue'
 
 const routes = [
+  { path: '/', redirect: '/posts' },
   { path: '/login', name: 'login', component: Login },
-  { path: '/', name: 'feed', component: Feed, meta: { requiresAuth: true } },
+  { path: '/posts', name: 'feed', component: Feed, meta: { requiresAuth: true } },
   { path: '/register', name: 'register', component: Register },
 ]
 
