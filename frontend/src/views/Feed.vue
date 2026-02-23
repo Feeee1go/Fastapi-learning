@@ -85,6 +85,7 @@ const skip = ref(0)
 const searchQuery = ref('')
 const posts = ref<PostOut[]>([])
 const voteLoading = ref<Record<number, boolean>>({})
+const liked = ref<Record<number, boolean>>({})
 
 const newPost = ref<{ title: string; content: string }>({ title: '', content: '' })
 
@@ -160,16 +161,24 @@ function displayContent(p: PostOut) {
 }
 async function vote(p: PostOut) {
   const id = postId(p)
+  const isLiked = !!liked.value[id]
+  const dir = isLiked ? 0 : 1
+  // optimistic update
+  liked.value[id] = !isLiked
+  p.votes = (p.votes ?? p.Post?.votes ?? 0) + (dir === 1 ? 1 : -1)
   voteLoading.value[id] = true
   try {
-    const payload = new URLSearchParams()
-    payload.append('post_id', id.toString())
-    payload.append('dir', '1')
+    const payload = { post_id: id, dir }
     await api.post('/vote/', payload)
-    // optimistic update
-    p.votes = (p.votes ?? p.Post?.votes ?? 0) + 1
-  } catch {
-    // ignore
+  } catch (e: any) {
+    const status = e?.response?.status
+    if (status === 409) {
+      // ignore, considered successful (duplicate like)
+    } else {
+      // revert optimistic update
+      liked.value[id] = isLiked
+      p.votes = (p.votes ?? p.Post?.votes ?? 0) + (dir === 1 ? -1 : 1)
+    }
   } finally {
     voteLoading.value[id] = false
   }
@@ -185,6 +194,11 @@ async function fetchPosts(reset = false) {
       if (it?.Post) return it as PostOut
       const post = it as Post
       return { Post: post, votes: post?.votes ?? 0 } as PostOut
+    })
+    // initialize like state for new posts
+    normalized.forEach((pp) => {
+      const pid = postId(pp)
+      if (liked.value[pid] === undefined) liked.value[pid] = false
     })
     if (reset || skip.value === 0) {
       posts.value = normalized
