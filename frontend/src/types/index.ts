@@ -8,7 +8,8 @@ export interface Post {
   id: number
   title: string
   content: string
-  owner: User
+  owner?: User
+  owner_id?: number
   created_at?: string
   votes?: number
   [key: string]: any
