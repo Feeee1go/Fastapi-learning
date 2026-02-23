@@ -4,7 +4,7 @@ import type { User, Token } from '@/types'
 export const useUserStore = defineStore('user', {
   state: () => ({
     user: null as User | null,
-    token: '' as string,
+    token: (typeof window !== 'undefined' ? localStorage.getItem('token') : '') ?? '' as string,
   }),
   getters: {
     isAuthenticated: (state) => !!state.token,

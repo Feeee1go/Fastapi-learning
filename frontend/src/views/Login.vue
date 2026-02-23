@@ -16,6 +16,10 @@
           <button type="submit" class="px-4 py-2 rounded bg-accent-500 hover:bg-accent-600">登录</button>
         </div>
         <div v-if="error" class="text-sm text-red-400">{{ error }}</div>
+        <div class="flex items-center mt-2">
+          <input id="remember" type="checkbox" v-model="rememberMe" class="h-4 w-4 border border-zinc-800 bg-zinc-900" style="accent-color: #f8fafc" />
+          <label for="remember" class="ml-2 text-sm text-zinc-400 select-none">Remember me</label>
+        </div>
       </form>
       <div class="text-sm text-center mt-2">
         <span class="text-zinc-400">No account? </span>
@@ -26,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import api from '@/utils/request'
 import { useUserStore } from '@/stores/user'
 import { useRouter } from 'vue-router'
@@ -34,9 +38,41 @@ import { useRouter } from 'vue-router'
 const email = ref('')
 const password = ref('')
 const error = ref('')
+const rememberMe = ref(false)
 const router = useRouter()
 const userStore = useUserStore()
 
+onMounted(() => {
+  const raw = localStorage.getItem('rememberedCredentials')
+  if (raw) {
+    try {
+      const decoded = JSON.parse(
+        decodeURIComponent(escape(atob(raw)))
+      )
+      if (decoded?.email && decoded?.password) {
+        email.value = decoded.email
+        password.value = decoded.password
+        rememberMe.value = true
+      }
+    } catch {
+      // ignore decoding errors
+    }
+  }
+})
+
+function saveRemembered() {
+  if (!rememberMe.value) {
+    localStorage.removeItem('rememberedCredentials')
+    return
+  }
+  try {
+    const payload = { email: email.value, password: password.value }
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
+    localStorage.setItem('rememberedCredentials', encoded)
+  } catch {
+    // ignore encoding errors
+  }
+}
 async function onSubmit() {
   error.value = ''
   const form = new URLSearchParams()
@@ -55,6 +91,7 @@ async function onSubmit() {
       userStore.setToken(token)
       // Basic user info, can be extended if backend returns user data
       userStore.setUser({ email: email.value })
+      saveRemembered()
       router.replace({ name: 'feed' })
     } else {
       error.value = '登录失败，请重试'

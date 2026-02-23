@@ -92,6 +92,7 @@ function formatDate(date?: string) {
 async function logout() {
   // simple local logout
   localStorage.removeItem('token')
+  localStorage.removeItem('rememberedCredentials')
   window.location.assign('/login')
 }
 
