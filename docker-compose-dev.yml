@@ -21,12 +21,14 @@ services:
   # 👇 数据库部分不用动
   db:
     image: postgres:13
+    ports:
+      - "5432:5432" # 暴露给宿主机，方便未来使用 pgAdmin/DBeaver 等工具连接
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password123
-      - POSTGRES_DB=fastapi
+      - POSTGRES_USER=${DATABASE_USERNAME}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_DB=${DATABASE_NAME}
 
 volumes:
   postgres_data:
